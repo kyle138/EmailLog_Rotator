@@ -1,6 +1,6 @@
 'use strict';
 console.log('Loading EmailLog_Rotator::');
-console.log('Version 0.3.1');
+console.log('Version 0.4');
 
 var aws = require('aws-sdk');
 var ddb = new aws.DynamoDB();
@@ -99,8 +99,17 @@ exports.handler = (event, context, callback) => {
               context.fail('Error deleting table:'+err+err.stack); //An error occurred creating table.
             } else {
               //console.log("Table deleted JSON:", JSON.stringify(data, null, 2));    //DEBUG
-              deleted = true;
-              complete();
+              ddb.waitFor('tableNotExists', {TableName: tableName}, function(err, data) {
+                if (err) {
+                  console.log("Table "+tableName+" not deleted.");
+                  console.log(err, err.stack);
+                  context.fail();
+                } else {
+                  deleted = true;
+                  console.log("Table "+tableName+" deleted.");
+                  complete();
+                }
+              });
             }
           });
         } else { //Table does not exist.
