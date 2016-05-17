@@ -17,17 +17,15 @@ var created = false;
 var deleted = false;
 
 exports.handler = (event, context, callback) => {
-    console.log('Received event:', JSON.stringify(event, null, 2));   //DEBUG
+    //console.log('Received event:', JSON.stringify(event, null, 2));   //DEBUG
 
     // Checks if specified table exists
     function tableExists(tableName, callback) {
-      console.log("Begin tableExists("+tableName+")");   //DEBUG
       ddb.listTables({}, function(err, data) {
         if(err) {
           console.error("Unable to list tables. Error JSON:", JSON.stringify(err, null, 2));
           context.fail('Error listing tables:'+err+err.stack);
         } else {
-          //console.log("tables: "+JSON.stringify(data));               //DEBUG
           if(data.TableNames.indexOf(tableName) == -1) {
             console.log("Table not found: "+tableName);   //DEBUG
             callback(false);
@@ -41,7 +39,7 @@ exports.handler = (event, context, callback) => {
 
     // Create the specified table
     function createTable(tableName, callback) {
-      console.log("Begin createTable("+tableName+")");   //DEBUG
+      //console.log("Begin createTable("+tableName+")");   //DEBUG
       tableExists(tableName, function(result) {
         if(result==false) {   //Table does not exist.
           var params = {
@@ -57,7 +55,6 @@ exports.handler = (event, context, callback) => {
                   WriteCapacityUnits: 5
               }
           };
-          //console.log("createTable params:: "+JSON.stringify(params));        //DEBUG
           ddb.createTable(params, function(err, data) {
              if (err) {
                  console.error("Unable to create table. Error JSON:", JSON.stringify(err, null, 2));
@@ -87,7 +84,7 @@ exports.handler = (event, context, callback) => {
 
     // Delete the specified table
     function deleteTable(tableName, callback) {
-      console.log("Begin deleteTable("+tableName+")");     //DEBUG
+      //console.log("Begin deleteTable("+tableName+")");     //DEBUG
       tableExists(tableName, function(result) {
         if(result==true) {   //Table exists.
           var params = {
@@ -98,7 +95,6 @@ exports.handler = (event, context, callback) => {
               console.error("Unable to delete table. Error JSON:", JSON.stringify(err, null, 2));
               context.fail('Error deleting table:'+err+err.stack); //An error occurred creating table.
             } else {
-              //console.log("Table deleted JSON:", JSON.stringify(data, null, 2));    //DEBUG
               ddb.waitFor('tableNotExists', {TableName: tableName}, function(err, data) {
                 if (err) {
                   console.log("Table "+tableName+" not deleted.");
@@ -133,8 +129,5 @@ exports.handler = (event, context, callback) => {
     //Main code begins here.
     deleteTable(tableNames["expired"], complete);
     createTable(tableNames["new"], complete);
-
-    callback(null, event.key1);  // Echo back the first key value
-    // callback('Something went wrong');
 
 };
