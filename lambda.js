@@ -88,7 +88,7 @@ exports.handler = (event, context, callback) => {
                   { AttributeName: "datetime", AttributeType: "S" }
               ],
               ProvisionedThroughput: {
-                  ReadCapacityUnits: 5,
+                  ReadCapacityUnits: 2,
                   WriteCapacityUnits: 5
               }
           };
