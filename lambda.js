@@ -6,7 +6,7 @@ var aws = require('aws-sdk');
 var ddb = new aws.DynamoDB();
 
 // Keep track of function completion
-var created,updated,deleted = false;
+var created = false, updated = false, deleted = false;
 
 exports.handler = (event, context, callback) => {
     //console.log('Received event:', JSON.stringify(event, null, 2));   //DEBUG
@@ -25,21 +25,54 @@ exports.handler = (event, context, callback) => {
 
     // Checks if specified table exists
     function tableExists(tableName, cb) {
-      ddb.listTables({}, function(err, data) {
-        if(err) {
-          console.error("Unable to list tables. Error JSON:", JSON.stringify(err, null, 2));
-          context.fail('Error listing tables:'+err+err.stack);
-        } else {
-          if(data.TableNames.indexOf(tableName) == -1) {
-            console.log("Table not found: "+tableName);   //DEBUG
-            cb(false);
+      if(!tableName) { //tableName is required.
+        if(typeof cb === 'function' && cb("Error, tableName is required.", null));
+        return false;
+      } else {
+        ddb.listTables({}, function(err, data) {
+          if(err) {
+            console.error("Unable to list tables. Error JSON:", JSON.stringify(err, null, 2));
+            context.fail('Error listing tables:'+err+err.stack);
           } else {
-            console.log("Table found: "+tableName);   //DEBUG
-            cb(true);
+            if(data.TableNames.indexOf(tableName) == -1) {
+              console.log("Table not found: "+tableName);   //DEBUG
+              cb(false);
+            } else {
+              console.log("Table found: "+tableName);   //DEBUG
+              cb(true);
+            }
           }
-        }
-      });
-    };
+        }); //End ddb.listTables
+      }
+    }; //End tableExists
+
+    // Check if specified table is currently provisioned as r1w1
+    function tableDowngraded(tableName, cb) {
+      if(!tableName) { //tableName is required
+        if(typeof cb === 'function' && cb("Error: tableName is required.", null));
+        return false;
+      } else {
+        tableExists(tableName, function(result) {
+          if(result==true) {  //Table exists
+            ddb.describeTable({TableName: tableName}, function(err, data) {
+              if (err) {
+                console.error("Unable to retrieve table description. Error JSON: ",JSON.stringify(err, null, 2));
+                context.fail('Error describing table:'+err+err.stack);
+              } else {
+                if((data.Table.ProvisionedThroughput.ReadCapacityUnits != 1) || (data.Table.ProvisionedThroughput.WriteCapacityUnits != 1)) {
+                  cb(true);
+                } else {
+                  console.log("tableName: "+tableName+" already provisioned r1w1.");
+                  cb(false);
+                }
+              }
+            }); //End describeTable
+          } else {  // Table does not exist
+            cb(false);
+          }
+        }); //End tableExists
+      }
+    }; //End tableDowngraded
 
     // Create the specified table
     function createTable(tableName, cb) {
@@ -60,36 +93,36 @@ exports.handler = (event, context, callback) => {
               }
           };
           ddb.createTable(params, function(err, data) {
-             if (err) {
-                 console.error("Unable to create table. Error JSON:", JSON.stringify(err, null, 2));
-                 context.fail('Error creating table:'+err+err.stack); //An error occurred creating table.
-             } else {
-                 //console.log("Created table. Table description JSON:", JSON.stringify(data, null, 2));
-                 ddb.waitFor('tableExists', {TableName: tableName}, function(err, data) {
-                   if (err) {
-                     console.log("Table "+tableName+" not created.");
-                     console.log(err, err.stack);
-                     context.fail();
-                   } else {
-                     created = true;
-                     console.log("Table "+tableName+" created.");
-                     cb();
-                   }
-                 });
-             }
-          });
+            if (err) {
+              console.error("Unable to create table. Error JSON:", JSON.stringify(err, null, 2));
+              context.fail('Error creating table:'+err+err.stack); //An error occurred creating table.
+            } else {
+              //console.log("Created table. Table description JSON:", JSON.stringify(data, null, 2));
+              ddb.waitFor('tableExists', {TableName: tableName}, function(err, data) {
+                if (err) {
+                  console.log("Table "+tableName+" not created.");
+                  console.log(err, err.stack);
+                  context.fail();
+                } else {
+                  created = true;
+                  console.log("Table "+tableName+" created.");
+                  cb();
+                }
+              }); //End waitFor
+            }
+          }); //End ddb.createTable
         } else {  //Table already exists.
           created = true;
           console.error("createTable()::Table already exists.");
           cb();
         }
-      });
+      }); //End tableExists
     }; //End createTable
 
     // Downgrade throughput for specified table
     function downgradeTable(tableName, cb) {
-      console.log("Begin downgradeTable("+tableName+")"); //DEBUG
-      tableExists(tableName, function(result) {
+//      console.log("Begin downgradeTable("+tableName+")"); //DEBUG
+      tableDowngraded(tableName, function(result) {
         if(result==true) { //Table exists
           var params = {
             TableName: tableName,
@@ -103,7 +136,7 @@ exports.handler = (event, context, callback) => {
               console.error("Unable to update table. Error JSON:", JSON.stringify(err, null, 2));
               context.fail('Error updating table:'+err+err.stack); //An error occurred updating the table.
             } else {
-              ddb.waitFor('ACTIVE', {TableName: tableName}, function(err, data) {
+              ddb.waitFor('tableExists', {TableName: tableName}, function(err, data) {
                 if (err) {
                   console.log("Table "+tableName+" not updated.");
                   console.log(err, err.stack);
@@ -113,15 +146,15 @@ exports.handler = (event, context, callback) => {
                   console.log("Table "+tableName+" updated.");
                   cb();
                 }
-              });
+              });//End waitFor
             }
-          });
+          });//End ddb.updateTable
         } else { //Table does not exist.
-          console.error("updateTable()::Table does not exist.");
+          console.error("downgradeTable()::Table "+tableName+" does not exist or does not need downgrading.");
           updated = true;
           cb();
         }
-      })
+      }); //End tableExists
     }; //End downgradeTable
 
     // Delete the specified table
@@ -147,25 +180,26 @@ exports.handler = (event, context, callback) => {
                   console.log("Table "+tableName+" deleted.");
                   cb();
                 }
-              });
+              }); //End waitFor
             }
-          });
+          }); //End ddb.deleteTable
         } else { //Table does not exist.
           console.error("deleteTable()::Table does not exist.");
           deleted = true;
           cb();
         }
-      });
+      }); //End tableExists
     }; //End deleteTable
 
     // Handle callbacks for create and delete functions and terminate Lambda function.
     function complete() {
-      console.log("Begin complete():: created="+created+" deleted="+deleted); //DEBUG
-      if(created && deleted) {
+      console.log("Begin complete():: created="+created+" updated="+updated+" deleted="+deleted); //DEBUG
+      if(created && updated && deleted) {
         console.log("Job well done.");
         context.succeed();
       }
     }; //End complete
+
 
     //**************************************************************************
     //Main code begins here.
@@ -193,8 +227,11 @@ exports.handler = (event, context, callback) => {
         tableNames["expired"] = "EmailLog-"+(YYYY-1).toString()+padMonth(MM);
     }
 
-//    deleteTable(tableNames["expired"], complete);
-    downgradeTable(TableNames["last"], complete)
-//    createTable(tableNames["new"], complete);
+    //Delete Table from 1 year ago
+    deleteTable(tableNames["expired"], complete);
+    //Downgrade last month's table's ProvisionedThroughput to r1 w1
+    downgradeTable(tableNames["last"], complete)
+    //Create next month's table with ProvisionedThroughput r5  w5
+    createTable(tableNames["new"], complete);
 
 };
