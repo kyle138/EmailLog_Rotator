@@ -231,7 +231,7 @@ exports.handler = (event, context, callback) => {
     deleteTable(tableNames["expired"], complete);
     //Downgrade last month's table's ProvisionedThroughput to r1 w1
     downgradeTable(tableNames["last"], complete)
-    //Create next month's table with ProvisionedThroughput r5  w5
+    //Create next month's table with ProvisionedThroughput R2 W5
     createTable(tableNames["new"], complete);
 
 };
